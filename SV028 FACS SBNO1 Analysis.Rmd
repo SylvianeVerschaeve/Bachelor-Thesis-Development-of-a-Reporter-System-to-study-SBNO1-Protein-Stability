@@ -1,0 +1,134 @@
+```{r}
+roh_FACS <-read.csv2("C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Rohdaten/SV028 FACS guava SBNO12.csv", sep=",", dec=".")
+
+FACSdat <- roh_FACS[, -ncol(roh_FACS)]
+
+colnames(FACSdat) <- c("Well", "Sample ID", "Date", "GFP+ Percent", "GFP+ Count", "GFP+ Mean", "GFP- Percent", "GFP- Count", "GFP- Mean", "RFP- Percent", "RFP- Count", "RFP- Mean", "RFP+ Percent", "RFP+ Count", "RFP+ Mean" )
+
+nmbr_FACS_replicates <- 2
+nmbr_FACS_samples <- 6
+
+FACS_sample_names <- c("pDest-FLAG-SBNO1", "pDest-N-EGFP-SBNO1", "pDest-C-EGFP-SBNO1", "dsRed-IRES-empty-EGFP", "dsRed-IRES-N-EGFP-SBNO1", "dsRed-IRES-C-EGFP-SBNO1")
+
+#View(FACSdat)
+```
+
+
+Calculate mean and sd
+```{r}
+#Mean
+FACS_mean <- list()
+for (i in c(1:nmbr_FACS_samples)){
+  FACS_mean[[i]] <- colMeans(FACSdat[(nmbr_FACS_replicates*(i-1)+1): (nmbr_FACS_replicates*i), 4:ncol(FACSdat)])
+}
+
+FACS_mean <- do.call(rbind, FACS_mean)
+rownames(FACS_mean) <- FACS_sample_names
+
+#sd
+FACS_sd <- list()
+for (i in c(1:nmbr_FACS_samples)){
+  FACS_sd[[i]] <- apply(FACSdat[(nmbr_FACS_replicates*(i-1)+1): (nmbr_FACS_replicates*i), 4:ncol(FACSdat)], 2, sd, na.rm = TRUE)
+}
+
+FACS_sd <- do.call(rbind, FACS_sd)
+rownames(FACS_sd) <- paste0(FACS_sample_names)
+colnames(FACS_sd) <- paste0("sd ", colnames(FACS_sd))
+
+#combine mean and sd
+FACS_mean_sd <- data.frame(column1 = rep(0, 6))
+for (i in 1:ncol(FACS_mean)){
+  FACS_mean_sd <- cbind(FACS_mean_sd, cbind(FACS_mean[, i], FACS_sd[,i]))
+  names(FACS_mean_sd)[(2*i):(2*i+1)] <- c(names(FACS_mean[1,][i]), names(FACS_sd[1,][i]))
+}
+FACS_mean_sd <- FACS_mean_sd[,-1]
+
+```
+
+
+Now what interests us is the mean and the standard deviation. To create beautiful ggplots the data has to be splitted accordingly:
+```{r}
+# GFP+
+GFPpos <- data.frame(
+  samples = FACS_sample_names,
+  GFPpos_mean = FACS_mean[,"GFP+ Percent"],
+  GFPpos_sd = FACS_sd[,"sd GFP+ Percent"]
+)
+GFPpos$samples <- factor(GFPpos$samples, levels = FACS_sample_names)
+
+# GFP-
+GFPneg <- data.frame(
+  samples = FACS_sample_names,
+  GFPneg_mean = FACS_mean[,"GFP- Percent"],
+  GFPneg_sd = FACS_sd[,"sd GFP- Percent"]
+)
+GFPneg$samples <- factor(GFPpos$samples, levels = FACS_sample_names)
+
+# RFP+
+RFPpos <- data.frame(
+  samples = FACS_sample_names,
+  RFPpos_mean = FACS_mean[,"RFP+ Percent"],
+  RFPpos_sd = FACS_sd[,"sd RFP+ Percent"]
+)
+RFPpos$samples <- factor(GFPpos$samples, levels = FACS_sample_names)
+
+# RFP-
+RFPneg <- data.frame(
+  samples = FACS_sample_names,
+  RFPneg_mean = FACS_mean[,"RFP- Percent"],
+  RFPneg_sd = FACS_sd[,"sd RFP- Percent"]
+)
+RFPneg$samples <- factor(GFPpos$samples, levels = FACS_sample_names)
+
+
+```
+
+
+ggploooooots
+```{r}
+#install.packages("ggprism")
+#install.packages("ggplot2")
+library(ggplot2)
+library(ggprism)
+
+#GFP+
+plot_EGFP_SV028 <-ggplot(GFPpos, aes(x = samples, y = GFPpos_mean)) +
+  geom_bar(stat = "identity", fill = "darkseagreen1", color = "seagreen4", width = 0.6, size = 1) +
+  geom_errorbar(aes(ymin = GFPpos_mean - GFPpos_sd, ymax = GFPpos_mean + GFPpos_sd), width = 0.4, color = "seagreen4", size = 0.8) +
+  labs(x = "", y = "Percentage of \nEGFP+ Cells [%]") +
+  #geom_text(aes(label = (paste((round(GFPpos_mean, 2)), "%"))), vjust = -0.5) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1)))+
+  scale_x_discrete(labels = c("pDest-\nFLAG-SBNO1", "pDest-N-\nEGFP-SBNO1", "pDest-C-\nEGFP-SBNO1", 
+                                "Lenti-\nempty", "Lenti-N-\nEGFP-SBNO1", "Lenti-SBNO1-\nC-EGFP"))+
+  theme_prism()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 16),
+          axis.title.y = element_text(size = 16),
+          axis.text.y = element_text(size = 16))
+
+#RFP+
+plot_dsRed_SV028 <-ggplot(RFPpos, aes(x = samples, y = RFPpos_mean)) +
+  geom_bar(stat = "identity", fill = "indianred1", color = "firebrick4", width = 0.6, size = 1) +
+  geom_errorbar(aes(ymin = RFPpos_mean - RFPpos_sd, ymax = RFPpos_mean + RFPpos_sd), width = 0.4, color = "firebrick4", size = 0.8) +
+  labs( x = "", y = "Percentage of \ndsRed+ Cells [%]")+
+  #geom_text(aes(label = (paste((round(RFPpos_mean, 2)), "%"))), vjust = -0.5) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1)))+
+  scale_x_discrete(labels = c("pDest-\nFLAG-SBNO1", "pDest-N-\nEGFP-SBNO1", "pDest-C-\nEGFP-SBNO1", 
+                                "Lenti-\nempty", "Lenti-N-\nEGFP-SBNO1", "Lenti-SBNO1-\nC-EGFP"))+
+  theme_prism()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 16),
+          axis.title.y = element_text(size = 16),
+          axis.text.y = element_text(size = 16))
+
+plot_EGFP_SV028
+plot_dsRed_SV028
+```
+
+This will save the plots in the chosen directory. 
+```{r}
+ggsave("C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/1.Guava dsRed.svg", plot = plot_dsRed_SV028, width = 8, height = 5)
+
+ggsave("C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/1.Guava EGFP.svg", plot = plot_EGFP_SV028, width = 8, height = 5)
+```
+
+
+

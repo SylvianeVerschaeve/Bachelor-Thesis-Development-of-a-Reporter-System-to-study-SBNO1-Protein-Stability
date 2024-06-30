@@ -1,0 +1,85 @@
+```{r}
+KO_roh1 <- read.csv2("C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Rohdaten/All knock-efficiencies.csv", sep=';', dec='.')
+
+KO_roh <- KO_roh1
+for (i in c(1:nrow(KO_roh1))){
+  for (t in c(2:4)){
+    if (is.na(as.numeric(as.character(KO_roh1[i, t])))){
+      KO_roh[i,t] <- NA
+    }
+  }
+}
+KO_roh <- KO_roh[,c(1, 2, 4)]
+
+```
+
+Let's make pretty data frames :)
+```{r}
+library(reshape2)
+
+for (i in 1:4) {
+  KO_data <- data.frame(
+    KO_samples = KO_roh[((i - 1) * 4 + 1):(i * 4), 1],
+    KO_means = apply(KO_roh[((i - 1) * 4 + 1):(i * 4), 2:3], 1, function(x) {
+      mean(as.numeric(x), na.rm = TRUE)
+      }), 
+    KO_sd = apply(KO_roh[((i - 1) * 4 + 1):(i * 4), 2:3], 1, function(x) {
+      sd(as.numeric(x), na.rm = TRUE)
+      })
+    )
+  KO_datas[[i]] <- KO_data
+}
+
+names(KO_datas) <- c("TRIM33", "TRIM28", "MIB1", "USP28")
+
+KO_dotss <- list()
+for (i in 1:4) {
+  KO_dots <- data.frame(
+    KO_samples = c(KO_roh[((i - 1) * 4 + 1):(i * 4), 1], KO_roh[((i - 1) * 4 + 1):(i * 4), 1]),
+    dots_data = c(KO_roh[((i - 1) * 4 + 1):(i * 4), 2], KO_roh[((i - 1) * 4 + 1):(i * 4), 3])
+      )
+  KO_dotss[[i]] <- KO_dots
+}
+
+```
+
+
+Ploooooots
+```{r}
+#install.packages("ggprism")
+#install.packages("ggplot2")
+library(ggplot2)
+library(ggprism)
+
+KO_plots <- list()
+KO_cfill <- c("grey90", "grey90", "grey90", "grey90")
+KO_ccontour <- c("grey48", "grey48", "grey48", "grey48")
+KO_cfill1 <- c("cadetblue1", "darkseagreen1", "tan1", "lightpink")
+KO_ccontour1 <- c("cadetblue4", "darkseagreen4", "orange3", "mediumvioletred")
+
+KO_directory <- c("C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/KO eff TRIM33.svg",
+               "C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/KO eff TRIM28.svg",
+               "C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/KO eff MIB1.svg",
+               "C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/KO eff USP28.svg")
+
+for (i in c(1:4)){
+  KO_plots[[i]] <- ggplot() +
+    geom_bar(data = KO_datas[[i]], aes(x = KO_samples, y = KO_means), stat = "identity", fill = KO_cfill[i], 
+             color = KO_ccontour[i], width = 0.6, size = 1) +
+   # geom_errorbar(data = KO_datas[[i]], aes(x = KO_samples, ymin = KO_means - KO_sd, ymax = KO_means + KO_sd), 
+    #              width = 0.4, color = KO_ccontour[i], size = 0.8) +
+    #geom_text(data = KO_datas[[i]], aes(x = KO_samples, y = KO_means, label = paste0(round(KO_means, 2) * 100, "%")), vjust = -0.5) +
+    geom_point(data = KO_dotss[[i]], aes(x = KO_samples, y = as.numeric(dots_data)), position = position_jitter(width = 0.2), size = 3, color = "grey48", na.rm = TRUE) + 
+    labs(x = "Guide", y = "Knock-Out Efficiency [%]") +
+    theme_prism() +
+    theme(axis.title.x = element_text(size = 16),
+          axis.title.y = element_text(size = 16), 
+          axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16))
+  print(KO_plots[[i]])
+  ggsave(KO_directory[i], plot = KO_plots[[i]], width = 8, height = 5)
+}
+
+```
+
+

@@ -1,0 +1,453 @@
+# 1. Data processing
+
+Load data and fill out some variables.
+```{r}
+roh <- read.csv2("C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Rohdaten/SV030 qPCR SBNO1.csv",sep=";", dec=".")
+
+data <- roh[, c("Well.Position", "Sample.Name", "Target.Name", "CT")]
+#View(data)
+
+nmbr_of_samples = 7 #including control (control should be last)
+nmbr_of_targets = 7 #including housekeeper, colors in qqplot chunk need to be adjusted!
+nmbr_of_replicates = 3
+name_housekeeper = "SRSF4"
+name_normalize = "FLAG" # name of the sample you want to use for normalization
+name_normalize2 = "empty"# name of a second sample you want to use for normalization
+targets_norm2 <- c("SBNO1 CO")
+
+#it happened before that CT-values from the csv data were not imported as numbers, but characters. If this is the case the following steps are required. Make sure that the decimal is written with a "." not ",". 
+
+data[,"CT"] <- as.numeric(data[,"CT"])
+```
+
+Separate the targets 
+```{r}
+targets = list()
+for (i in c(1:nmbr_of_targets)){
+  targets[[i]] = data[((i-1)*nmbr_of_replicates*nmbr_of_samples + 1):(i*nmbr_of_replicates*nmbr_of_samples), ]
+  names(targets)[[i]] <- targets[[i]][1, "Target.Name"]
+}
+```
+
+
+Separate the samples. Create a List substructured > target > sample
+```{r}
+data_target_sample = list()
+for (i in c(1:nmbr_of_targets)){
+  data_target_sample[[i]] = list()
+  target_name <- targets[[i]][1, "Target.Name"]
+  
+  for (s in c(1:nmbr_of_samples)){
+    sample_data <- targets[[i]][((s-1)*nmbr_of_replicates + 1):(s*nmbr_of_replicates), ]
+    sample_name <- sample_data[1, "Sample.Name"]
+    data_target_sample[[i]][[sample_name]] <- targets[[i]][((s-1)*nmbr_of_replicates + 1):(s*nmbr_of_replicates), ]
+  }
+   names(data_target_sample)[i] <- target_name
+}
+```
+
+
+Calculate the mean values and standard deviations for each sample of each target
+```{r}
+#mean
+mean_values = list()
+for (i in c(1:nmbr_of_targets)){
+  mean_values[[i]] = list()
+  target_name <- names(data_target_sample[i])
+  for(s in c(1:nmbr_of_samples)){
+    sample_name <- names(data_target_sample[[i]][s])
+    mean_values[[i]][[sample_name]] <-  mean(data_target_sample[[i]][[s]]$CT, na.rm =TRUE)
+  }
+  names(mean_values)[i] <- target_name
+}
+
+#standard deviation
+sd_values = list()
+for (i in c(1:nmbr_of_targets)){
+  sd_values[[i]] = list()
+  target_name <- names(data_target_sample[i])
+  for(s in c(1:nmbr_of_samples)){
+    sample_name <- names(data_target_sample[[i]][s])
+    sd_values[[i]][[sample_name]] <- sd(data_target_sample[[i]][[s]]$CT, na.rm =TRUE)
+  }
+  names(sd_values)[i] <- target_name
+}
+
+```
+
+
+To cancel out replicates that do not fit the other two, we compare the sd to the difference between CT-mean and CT-value of the sample. If the difference between CT-mean and CT-value is higher than a certain value, the samples are excluded.
+The mean and standard deviation are calculated again. Add the mean values and standard deviations to your List.
+
+```{r}
+#replicate removal
+na_data_target_sample <- data_target_sample
+for (i in c(1:nmbr_of_targets)){
+  for (s in c(1:nmbr_of_samples)){
+    for (t in c(1:3)){
+      if (!is.na((data_target_sample[[i]][[s]][t,"CT"] - mean_values[[i]][[s]]) >= sd_values[[i]][[s]])){ 
+        if (abs((data_target_sample[[i]][[s]][t,"CT"] - mean_values[[i]][[s]])) >= sd_values[[i]][[s]]){ # oder vlt schwellenwert der Abweichung besser -> nicht so #viel Probenverlust
+          na_data_target_sample[[i]][[s]][t,"CT"] <- NA
+        }
+      }
+   }
+  }
+}
+
+
+#mean calculation
+nd_mean_values = list()
+for (i in c(1:nmbr_of_targets)){
+  nd_mean_values[[i]] = list()
+  target_name <- names(na_data_target_sample[i])
+  for(s in c(1:nmbr_of_samples)){
+    sample_name <- names(na_data_target_sample[[i]][s])
+    nd_mean_values[[i]][[sample_name]] <- mean(na_data_target_sample[[i]][[s]]$CT, na.rm =TRUE)
+  }
+  names(nd_mean_values)[i] <- target_name
+}
+
+
+#standard deviation calculation
+nd_sd_values = list()
+for (i in c(1:nmbr_of_targets)){
+  nd_sd_values[[i]] = list()
+  target_name <- names(na_data_target_sample[i])
+  for(s in c(1:nmbr_of_samples)){
+    sample_name <- names(na_data_target_sample[[i]][s])
+    nd_sd_values[[i]][[sample_name]] <- sd(na_data_target_sample[[i]][[s]]$CT, na.rm =TRUE)
+  }
+  names(nd_sd_values)[i] <- target_name
+}
+
+```
+
+
+Add the mean values and standard deviations to your List.
+
+```{r}
+
+#add mean values
+na_data_target_sample_wm <- list()
+
+for (i in c(1:nmbr_of_targets)){
+  na_data_target_sample_wm[[i]] <- list()
+  target_name <- names(na_data_target_sample[i])
+  for(s in c(1:nmbr_of_samples)){
+    means_merge <- data.frame(c(nd_mean_values[[i]][[s]], nd_mean_values[[i]][[s]], nd_mean_values[[i]][[s]]))
+    names(means_merge) <- "mean"
+    sample_name <- names(na_data_target_sample[[i]][s])
+    na_data_target_sample_wm[[i]][[sample_name]] <- cbind(na_data_target_sample[[i]][[s]], means_merge)
+  }
+  names(na_data_target_sample_wm)[i] <- target_name
+}
+
+
+#add sd values
+na_data_target_sample_wm_sd <- list()
+
+for (i in c(1:nmbr_of_targets)){
+  na_data_target_sample_wm_sd[[i]] <- list()
+  target_name <- names(na_data_target_sample_wm[i])
+  for(s in c(1:nmbr_of_samples)){
+    sd_merge <- data.frame(c(nd_sd_values[[i]][[s]], nd_sd_values[[i]][[s]], nd_sd_values[[i]][[s]]))
+    names(sd_merge) <- "standard deviation"
+    sample_name <- names(na_data_target_sample_wm[[i]][s])
+    na_data_target_sample_wm_sd[[i]][[sample_name]] <- cbind(na_data_target_sample_wm[[i]][[s]], sd_merge)
+  }
+  names(na_data_target_sample_wm_sd)[i] <- target_name
+}
+
+```
+
+
+Select your housekeeper
+```{r}
+housekeeper <- na_data_target_sample_wm_sd[[name_housekeeper]]
+
+```
+
+
+Calculate Delta CT (subtract the housekeeper CT values from your measured values). From here on every step is repeated with the single replicate values for visualization later on. 
+```{r}
+data_m_dCT <- list()
+for (i in c(1:nmbr_of_targets)){
+  data_m_dCT[[i]] <- list()
+  target_name <- names(na_data_target_sample_wm_sd[i])
+  for (s in c(1:nmbr_of_samples)){
+    sample_name <- names(na_data_target_sample_wm_sd[[i]][s])
+    deltaCT <- na_data_target_sample_wm_sd[[i]][[s]]["mean"] - housekeeper[[s]]["mean"]
+    names(deltaCT) <- "deltaCT"
+    data_m_dCT[[i]][[sample_name]] <- cbind(na_data_target_sample_wm_sd[[i]][[s]], deltaCT)
+  }
+  names(data_m_dCT)[i] <- target_name
+}
+
+#single replicates
+qPCR_sdat_dCT <- list()
+for (i in c(1:nmbr_of_targets)){
+  qPCR_sdat_dCT[[i]] <- list()
+  target_name <- names(na_data_target_sample_wm_sd[i])
+  for (s in c(1:nmbr_of_samples)){
+    sample_name <- names(na_data_target_sample_wm_sd[[i]][s])
+    deltaCT <- na_data_target_sample_wm_sd[[i]][[s]]["CT"] - housekeeper[[s]]["mean"]
+    names(deltaCT) <- "deltaCT"
+    qPCR_sdat_dCT[[i]][[sample_name]] <- cbind(na_data_target_sample_wm_sd[[i]][[s]], deltaCT)
+  }
+  names(qPCR_sdat_dCT)[i] <- target_name
+}
+
+```
+
+
+To do Fehlerfortpflanzung, calculate SD (delta Ct). Like this: (SD(sample)^2 + SD(housekeeper)^2)^1/2. The sd values are not needed for single replicates. 
+```{r}
+data_m_dCT_sddCT <- list()
+for (i in c(1:nmbr_of_targets)){
+  data_m_dCT_sddCT[[i]] <- list()
+  target_name <- names(data_m_dCT[i])
+  for(s in c(1:nmbr_of_samples)){
+    sample_name <- names(data_m_dCT[[i]][s])
+    sd_deltaCT <- ((data_m_dCT[[i]][[s]]["standard deviation"])^2 + (housekeeper[[s]]["standard deviation"])^2)^(1/2)
+    names(sd_deltaCT) <- "sd deltaCT"
+    data_m_dCT_sddCT[[i]][[sample_name]] <- cbind(data_m_dCT[[i]][[s]], sd_deltaCT)
+  }
+  names(data_m_dCT_sddCT)[i] <- target_name
+}
+
+```
+
+
+Normalize deltaCT over the chosen sample (see name_normalize) delta delta CT = dCT(sample) - dCT(normalization sample)
+```{r}
+
+data_m_dCT_sddCT_ddCT <- list()
+for (i in c(1:nmbr_of_targets)){
+  data_m_dCT_sddCT_ddCT[[i]] <- list()
+  target_name <- names(data_m_dCT_sddCT[i])
+  if (target_name %in% targets_norm2){
+    for (s in c(1:nmbr_of_samples)){
+      sample_name <- names(data_m_dCT_sddCT[[i]][s])
+      delta_delta_CT <- data_m_dCT_sddCT[[i]][[s]]["deltaCT"] - data_m_dCT_sddCT[[i]][[name_normalize2]]["deltaCT"]
+      names(delta_delta_CT) <- "delta deltaCT"
+      data_m_dCT_sddCT_ddCT[[i]][[sample_name]] <- cbind(data_m_dCT_sddCT[[i]][[s]], delta_delta_CT)
+    }} else {
+      for (s in c(1:nmbr_of_samples)){
+      sample_name <- names(data_m_dCT_sddCT[[i]][s])
+      delta_delta_CT <- data_m_dCT_sddCT[[i]][[s]]["deltaCT"] - data_m_dCT_sddCT[[i]][[name_normalize]]["deltaCT"]
+      names(delta_delta_CT) <- "delta deltaCT"
+      data_m_dCT_sddCT_ddCT[[i]][[sample_name]] <- cbind(data_m_dCT_sddCT[[i]][[s]], delta_delta_CT)
+    }}
+  names(data_m_dCT_sddCT_ddCT)[i] <- target_name
+}
+
+#single replicates
+qPCR_sdat_dCT_ddCT <- list()
+for (i in c(1:nmbr_of_targets)){
+  qPCR_sdat_dCT_ddCT[[i]] <- list()
+  target_name <- names(qPCR_sdat_dCT[i])
+  if (target_name %in% targets_norm2){
+    for (s in c(1:nmbr_of_samples)){
+      sample_name <- names(qPCR_sdat_dCT[[i]][s])
+      delta_delta_CT <- qPCR_sdat_dCT[[i]][[s]]["deltaCT"] - data_m_dCT_sddCT[[i]][[name_normalize2]]["deltaCT"]
+      names(delta_delta_CT) <- "delta deltaCT"
+      qPCR_sdat_dCT_ddCT[[i]][[sample_name]] <- cbind(qPCR_sdat_dCT[[i]][[s]], delta_delta_CT)
+    }} else {
+      for (s in c(1:nmbr_of_samples)){
+      sample_name <- names(qPCR_sdat_dCT[[i]][s])
+      delta_delta_CT <- qPCR_sdat_dCT[[i]][[s]]["deltaCT"] - data_m_dCT_sddCT[[i]][[name_normalize]]["deltaCT"]
+      names(delta_delta_CT) <- "delta deltaCT"
+      qPCR_sdat_dCT_ddCT[[i]][[sample_name]] <- cbind(qPCR_sdat_dCT[[i]][[s]], delta_delta_CT)
+    }}
+  names(qPCR_sdat_dCT_ddCT)[i] <- target_name
+}
+
+```
+
+
+Calculate the standard deviation of the delta delta CT SD(ddCT) = ((sddCT(Sample))^2 + (sddCT(deltaCT)))^2)^(1/2)
+```{r}
+data_m_dCT_sddCT_ddCT_sdddCT <- list()
+for (i in c(1:nmbr_of_targets)){
+  data_m_dCT_sddCT_ddCT_sdddCT[[i]] <- list()
+  target_name <- names(data_m_dCT_sddCT_ddCT[i])
+  if(target_name %in% targets_norm2){
+    for (s in c(1:nmbr_of_samples)){
+      sample_name <- names(data_m_dCT_sddCT_ddCT[[i]][s])
+      sd_delta_delta_CT <- ((data_m_dCT_sddCT_ddCT[[i]][[s]]["sd deltaCT"])^2 + (data_m_dCT_sddCT_ddCT[[i]][[name_normalize2]]["sd deltaCT"])^2)^(1/2)
+      names(sd_delta_delta_CT) <- "sd delta deltaCT"
+      data_m_dCT_sddCT_ddCT_sdddCT[[i]][[sample_name]] <- cbind(data_m_dCT_sddCT_ddCT[[i]][[s]], sd_delta_delta_CT)
+    }} else {
+      for (s in c(1:nmbr_of_samples)){
+      sample_name <- names(data_m_dCT_sddCT_ddCT[[i]][s])
+      sd_delta_delta_CT <- ((data_m_dCT_sddCT_ddCT[[i]][[s]]["sd deltaCT"])^2 + (data_m_dCT_sddCT_ddCT[[i]][[name_normalize]]["sd deltaCT"])^2)^(1/2)
+      names(sd_delta_delta_CT) <- "sd delta deltaCT"
+      data_m_dCT_sddCT_ddCT_sdddCT[[i]][[sample_name]] <- cbind(data_m_dCT_sddCT_ddCT[[i]][[s]], sd_delta_delta_CT)
+    }}
+  names(data_m_dCT_sddCT_ddCT_sdddCT)[i] <- target_name
+}
+#View(data_m_dCT_sddCT_ddCT_sdddCT)
+```
+
+The 2^-ddCT values have to be calculated
+```{r}
+data_m_dCT_sddCT_ddCT_sdddCT_2ddCT <- list()
+for (i in c(1:nmbr_of_targets)){
+  data_m_dCT_sddCT_ddCT_sdddCT_2ddCT[[i]] <- list()
+  target_name <- names(data_m_dCT_sddCT_ddCT_sdddCT[i])
+  for (s in c(1:nmbr_of_samples)){
+    sample_name <- names(data_m_dCT_sddCT_ddCT_sdddCT[[i]][s])
+    twoddCT <- 2^(-data_m_dCT_sddCT_ddCT_sdddCT[[i]][[s]]["delta deltaCT"]) 
+    names(twoddCT) <- "2^(delta deltaCT)"
+    data_m_dCT_sddCT_ddCT_sdddCT_2ddCT[[i]][[sample_name]] <- cbind(data_m_dCT_sddCT_ddCT_sdddCT[[i]][[s]], twoddCT)
+  }
+  names(data_m_dCT_sddCT_ddCT_sdddCT_2ddCT)[i] <- target_name
+}
+
+
+#single replicates
+qPCR_sdat_complete <- list()
+for (i in c(1:nmbr_of_targets)){
+  qPCR_sdat_complete[[i]] <- list()
+  target_name <- names(qPCR_sdat_dCT_ddCT[i])
+  for (s in c(1:nmbr_of_samples)){
+    sample_name <- names(qPCR_sdat_dCT_ddCT[[i]][s])
+    twoddCT <- 2^(-qPCR_sdat_dCT_ddCT[[i]][[s]]["delta deltaCT"]) 
+    names(twoddCT) <- "2^(delta deltaCT)"
+    qPCR_sdat_complete[[i]][[sample_name]] <- cbind(qPCR_sdat_dCT_ddCT[[i]][[s]], twoddCT)
+  }
+  names(qPCR_sdat_complete)[i] <- target_name
+}
+
+```
+
+
+Last but not least: The standard deviation of 2^ddCT. SD(2ddCT) = ln(2) * 2^(-ddCT) * sdddCT
+```{r}
+data_complete <- list()
+for (i in c(1:nmbr_of_targets)){
+  data_complete[[i]] <- list()
+  target_name <- names(data_m_dCT_sddCT_ddCT_sdddCT_2ddCT[i])
+  for (s in c(1:nmbr_of_samples)){
+    sample_name <- names(data_m_dCT_sddCT_ddCT_sdddCT_2ddCT[[i]][s])
+    sdd2ddCT <- log(2)*2^(- data_m_dCT_sddCT_ddCT_sdddCT_2ddCT[[i]][[s]]["delta deltaCT"]) * data_m_dCT_sddCT_ddCT_sdddCT_2ddCT[[i]][[s]]["sd delta deltaCT"]
+    names(sdd2ddCT) <- "sd 2^(delta deltaCT)"
+    data_complete[[i]][[sample_name]] <- cbind(data_m_dCT_sddCT_ddCT_sdddCT_2ddCT[[i]][[s]], sdd2ddCT)
+  }
+  names(data_complete)[i] <- target_name
+}
+
+```
+
+
+Display your beautiful data and be happy :)
+```{r}
+#View(data_complete)
+#View(qPCR_sdat_complete)
+```
+
+We now want do portray the important data (2ddCT and sd 2ddCT) in a sensible way for plots. The control is left out
+```{r}
+qPCR_rel_data <- list()
+target_names <- names(data_complete)
+
+for (i in (1:nmbr_of_targets)){
+  target_name <- target_names[[i]]
+  
+  target_2ddCT <- c()
+  for (d in c(1:(nmbr_of_samples -1))){
+    target_2ddCT <- c(target_2ddCT, data_complete[[target_name]][[d]]["2^(delta deltaCT)"][1,1])  
+  }
+  
+  target_sdd2ddCT <- c()
+  for (f in c(1:(nmbr_of_samples -1))){
+    target_sdd2ddCT <- c(target_sdd2ddCT, data_complete[[target_name]][[f]]["sd 2^(delta deltaCT)"][1,1])  
+  }
+  
+  qPCR_rel_data[[i]] <- data.frame(
+    samples = names(data_complete[[target_name]])[-length(data_complete[[target_name]])],
+    target_2ddCT = target_2ddCT,
+    target_sdd2ddCT = target_sdd2ddCT
+  )
+  qPCR_rel_data[[i]]$samples <- factor(qPCR_rel_data[[i]]$samples, levels = names(data_complete[[target_name]])[-length(data_complete[[target_name]])])
+  colnames(qPCR_rel_data[[i]]) <- c("samples", "2ddCT", "sd 2ddCT")
+  
+}
+names(qPCR_rel_data) <- target_names
+
+#View(qPCR_rel_data[["EGFP"]])
+```
+
+And we portray the single data 2ddCT values in a sensible data frame for dot-visualization
+```{r}
+qPCR_single_data <- list()
+target_names <- names(qPCR_sdat_complete)
+
+for (i in  c(1:(nmbr_of_targets))){
+  target_name <- target_names[[i]]
+  sampl_target_2ddCT <- c()
+  for (d in c(1:(nmbr_of_samples -1))){
+    sampl_target_2ddCT <- c(sampl_target_2ddCT, qPCR_sdat_complete[[target_name]][[d]]["2^(delta deltaCT)"][1:3,1])  
+  }
+    
+  qPCR_single_data[[i]] <- data.frame(
+    single_samples = rep(names(qPCR_sdat_complete[[target_name]])[-length(qPCR_sdat_complete[[target_name]])], each = 3),
+    sample_2ddCT = sampl_target_2ddCT
+    )
+  qPCR_single_data[[i]]$single_samples <- factor(qPCR_single_data[[i]]$single_samples, 
+                                          levels = names(qPCR_sdat_complete[[target_name]])[-length(qPCR_sdat_complete[[target_name]])])
+  colnames(qPCR_single_data[[i]]) <- c("single_samples", "sample_2ddCT")
+}
+names(qPCR_single_data) <- target_names
+
+#View(qPCR_single_data)
+#View(qPCR_sdat_complete)
+```
+
+
+
+Now we make beautiful ggplots and save them into our directory :)
+```{r}
+#install.packages("ggplot2")
+library(ggplot2)
+library(ggprism)
+
+qPCR_bar_plots <- list()
+colors_fill <- c("indianred1", "darkseagreen1", "lightblue1", "steelblue1", "indianred1", "indianred1", "khaki1")
+colors_contour <- c("firebrick4", "seagreen4", "lightblue4", "steelblue4", "firebrick4", "firebrick4", "goldenrod2")
+
+directory <- c("C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/qPCR TS dsRed1.svg",
+               "C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/qPCR TS EGFP.svg",
+               "C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/qPCR TS CO SBNO1.svg",
+               "C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/qPCR TS SRSF4.svg",
+               "C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/qPCR TS dsRed2.svg",
+               "C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/qPCR TS dsRed3.svg",
+               "C:/Users/sylvi/Documents/0. Arbeit/Studium/Bachelorarbeit/Abbildungen/R Plots/qPCR TS end SBNO1.svg")
+
+for (i in c(1:nmbr_of_targets)){
+  target_2ddCT <- qPCR_rel_data[[i]][,"2ddCT"]
+  target_sdd2ddCT <- qPCR_rel_data[[i]][,"sd 2ddCT"]
+  single_samples <- qPCR_single_data[[i]][["single_samples"]]
+  sample_2ddCT <- qPCR_single_data[[i]][["sample_2ddCT"]]
+  
+  qPCR_bar_plots[[i]] <- ggplot()+
+    geom_bar(data = qPCR_rel_data[[i]], aes(x = samples, y = target_2ddCT), stat = "identity", 
+             fill = colors_fill[i], color = colors_contour[i], width = 0.6, size = 1)+
+    geom_errorbar(data = qPCR_rel_data[[i]], aes(x = samples, ymin = target_2ddCT - target_sdd2ddCT, ymax = target_2ddCT + target_sdd2ddCT), 
+                  color = colors_contour[i], width = 0.4, size = 0.8)+
+    geom_point(data = qPCR_single_data[[i]], aes(x = single_samples, y = as.numeric(sample_2ddCT)), 
+               position = position_jitter(width = 0.2), size = 3, color = colors_contour[i], na.rm = TRUE) +
+    scale_x_discrete(labels = c("pDest-\nFLAG-SBNO1", "pDest-N-\nEGFP-SBNO1", "pDest-SBNO1-\n-C-EGFP", 
+                                "Lenti-\nempty", "Lenti-N-\nEGFP-SBNO1", "Lenti-SBNO1-\nC-EGFP"))+
+    #geom_text(data = qPCR_rel_data[[i]], aes(x = samples, y = target_2ddCT, label = round(target_2ddCT, 1)), vjust = -1) +
+    theme_prism()+
+    labs(y = expression(2^{Delta * Delta * CT}), x = "")+
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 16),
+          axis.title.y = element_text(size = 18),
+          axis.text.y = element_text(size = 16))
+  print(qPCR_bar_plots[[i]])
+  ggsave(directory[i], plot = qPCR_bar_plots[[i]], width = 8, height = 5)
+}
+
+```
+
